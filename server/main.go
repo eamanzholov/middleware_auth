@@ -3,16 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"time"
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
-	grpc_validator "github.com/grpc-ecosystem/go-grpc-middleware/validator"
 	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
+	grpc_validator "github.com/grpc-ecosystem/go-grpc-middleware/validator"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 
 	pb "middleware/proto/github.com/eamanzholov/middleware_auth"
@@ -47,23 +49,28 @@ func main() {
 	logger, _ := zap.NewProduction()
 
 	// gRPC сервер с middleware
-	s := grpc.NewServer(
+	grpcServer := grpc.NewServer(
 		grpc_middleware.WithUnaryServerChain(
-			grpc_zap.UnaryServerInterceptor(logger),   // Логирование
+			grpc_zap.UnaryServerInterceptor(logger),    // Логирование
 			grpc_auth.UnaryServerInterceptor(authFunc), // Аутентификация
 			grpc_validator.UnaryServerInterceptor(),    // Валидация
 		),
 	)
 
-	pb.RegisterAuthServiceServer(s, &server{})
+	// Регистрируем сервис
+	pb.RegisterAuthServiceServer(grpcServer, &server{})
 
+	// Включаем reflection (для grpcurl и других клиентов)
+	reflection.Register(grpcServer)
+
+	// Стартуем сервер
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
-		panic(err)
+		log.Fatalf("failed to listen: %v", err)
 	}
 
 	logger.Info("🚀 gRPC server started on :50051")
-	if err := s.Serve(lis); err != nil {
-		panic(err)
+	if err := grpcServer.Serve(lis); err != nil {
+		log.Fatal(err)
 	}
 }
